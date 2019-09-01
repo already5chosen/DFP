@@ -10,10 +10,14 @@ extern "C" {
 #include "divide_pow10_reference.h"
 #include "divide_pow10.h"
 };
+#include "multiprec_ut.h"
 
 static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps);
 static void time_test(const uint64_t* inpv, const unsigned* expv, int nInps, int nIter);
 static int FindNormalizationFactor(const uint64_t src[4]);
+static void InitPow10Table(void);
+
+static mp_uint128_t pow10_tab[35];
 
 int main(int argz, char**argv)
 {
@@ -56,6 +60,8 @@ int main(int argz, char**argv)
     return 1;
   }
   nIter |= 1; // use odd number of iterations
+
+  InitPow10Table();
 
   std::vector<uint64_t> inpv(nInps*4);
   std::vector<unsigned> expv(nInps);
@@ -153,20 +159,30 @@ static void time_test(const uint64_t* inpv, const unsigned* expv, int nInps, int
 static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps)
 {
   for (int i = 0; i < nInps; ++i) {
-    uint64_t y_ref[2], y_res[2];
-    int r_ref = DivideUint224ByPowerOf10_ref(y_ref, &inpv[i*4], expv[i]);
-    int r_res = DivideUint224ByPowerOf10    (y_res, &inpv[i*4], expv[i]);
-    if (y_res[0] != y_ref[0] || y_res[1] != y_ref[1] || r_res != r_ref) {
-      fprintf(stderr,
-        "%016llx:%016llx:%016llx:%016llx / 1E%u\n"
-        "res: %016llx:%016llx,%d\n"
-        "ref: %016llx:%016llx,%d\n"
-        "Fail!\n"
-        ,inpv[i*4+3],inpv[i*4+2],inpv[i*4+1],inpv[i*4+0], expv[i]
-        ,y_res[1],y_res[0], r_res
-        ,y_ref[1],y_ref[0], r_ref
-        );
-      return false;
+    int r_ref[5] = {0,1,2,3};
+    uint64_t y_ref[2];
+    r_ref[4] = DivideUint224ByPowerOf10_ref(y_ref, &inpv[i*4], expv[i]);
+    mp_uint256_t x[5];
+    x[0] = mulx(pow10_tab[expv[i]], y_ref);
+    x[2] = add(x[0], pow10_tab[expv[i]].half());
+    x[1] = sub(x[2], 1);
+    x[3] = sub(add(x[0], pow10_tab[expv[i]]), 1);
+    x[4] = mp_uint256_t(&inpv[i*4]);
+    for (int k = 0; k < 5; ++k) {
+      uint64_t y_res[2];
+      int r_res = DivideUint224ByPowerOf10(y_res, x[k].w, expv[i]);
+      if (y_res[0] != y_ref[0] || y_res[1] != y_ref[1] || r_res != r_ref[k]) {
+        fprintf(stderr,
+          "%016llx:%016llx:%016llx:%016llx / 1E%u\n"
+          "res: %016llx:%016llx,%d\n"
+          "ref: %016llx:%016llx,%d\n"
+          "Fail!\n"
+          ,x[k].w[3],x[k].w[2],x[k].w[1],x[k].w[0], expv[i]
+          ,y_res[1],y_res[0], r_res
+          ,y_ref[1],y_ref[0], r_ref[k]
+          );
+        return false;
+      }
     }
  }
   return true;
@@ -196,4 +212,13 @@ static int FindNormalizationFactor(const uint64_t src[4])
   n += FindNormalizationFactorCore(x, 4, 0);
   n += FindNormalizationFactorCore(x, 3, 0xFFFF);
   return n;
+}
+
+static void InitPow10Table(void)
+{
+  mp_uint128_t val(1);
+  for (int i = 0; i < sizeof(pow10_tab)/sizeof(pow10_tab[0]); ++i) {
+    pow10_tab[i] = val;
+    val *= 10;
+  }
 }
