@@ -3,6 +3,8 @@
 #include <random>
 #include <functional>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 
 extern "C" {
 #include "divide_pow10_reference.h"

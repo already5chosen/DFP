@@ -13,9 +13,10 @@ static inline uint64_t __umulh(uint64_t a, uint64_t b) {
 // result - result of division, 2 64-bit words, up to 112 significant bits, Little Endian
 // src    - source (dividend), 4 64-bit words, up to 224 significant bits, Little Endian
 // n      - decimal exponent of the divisor, i.e. divisor=10**n, range 0 to 34
-// Return value: -1 when reminder of division is < divisor/2,
-//                0 when reminder = divisor/2,
-//                1 when reminder > divisor/2,
+// Return value:  0 when remainder of division ==0
+//                1 when remainder of division >0 and < divisor/2,
+//                2 when remainder == divisor/2,
+//                3 when remainder > divisor/2
 //
 // Comments:
 // 1. It works only on Little Endian machines with sizeof(uint32_t)*2=sizeof(uint64_t)
@@ -41,7 +42,7 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
     }
     result[0] = src0;
     result[1] = src1;
-    return rem < 5 ? -1 : rem != 5;
+    return rem < 5 ? rem != 0 : (rem != 5) + 2;
   }
 
   // n > 1
@@ -78,7 +79,7 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
     if (n == 0) { // done
       result[0] = (src1 << 63) | (src0 >> 1);
       result[1] = src1 >> 1;
-      return (src0 & 1) == 0 ? -1 : (steaky != 0);
+      return (src0 & 1) * 2 | (steaky != 0);
     }
     // not done yet
   }
@@ -122,5 +123,5 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   result[0] = (r0 >> 1) | (r1 << 31) | (r2 << 63);
   result[1] = (r2 >> 1) | (r3 << 31);
 
-  return (r0 & 1) == 0 ? -1 : (steaky != 0);
+  return (r0 & 1) * 2 | (steaky != 0);
 }
