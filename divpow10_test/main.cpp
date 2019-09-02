@@ -97,7 +97,7 @@ int main(int argz, char**argv)
       ++es;
     }
 
-    // record inputs for speed test
+    // store inputs for the tests
     for (int k = 0; k < 4; ++k)
       inpv[i*4+k] = x[k];
     expv[i] = es;
@@ -108,7 +108,34 @@ int main(int argz, char**argv)
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
   //
-  // Test 2 - Input width and scaling factor are close to maximum
+  // Test 2 - another random distribution of input width and scaling factor
+  //
+  for (int i = 0; i < nInps; ++i) {
+    uint64_t wx = rndFunc();
+    uint64_t w0 = uint32_t(wx);
+    uint64_t w1 = wx >> 32;
+    int nBits = ((w0*224)>>32)+1;
+    uint64_t x[4] = {0};
+    unsigned nw = (nBits+63)/64;
+    for (unsigned k = 0; k < nw; ++k)
+      x[k] = rndFunc();
+    unsigned nmsb = (nBits - 1) % 64;
+    x[nw-1] = (x[nw-1] | (uint64_t(1) << 63)) >> (63 - nmsb); // exactly nmsb bits
+
+    int min_exp = FindNormalizationFactor(x);
+    expv[i] = (((35-min_exp)*w1) >> 32) + min_exp;
+
+    // store inputs for the tests
+    for (int k = 0; k < 4; ++k)
+      inpv[i*4+k] = x[k];
+  }
+
+  if (!result_test(inpv.data(), expv.data(), nInps))
+    return 1;
+  time_test(inpv.data(), expv.data(), nInps, nIter);
+
+  //
+  // Test 3 - Input width and scaling factor are close to maximum
   //
   for (int i = 0; i < nInps; ++i) {
     for (unsigned k = 0; k < 4; ++k)
@@ -163,12 +190,14 @@ static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps)
     uint64_t y_ref[2];
     r_ref[4] = DivideUint224ByPowerOf10_ref(y_ref, &inpv[i*4], expv[i]);
     mp_uint256_t x[5];
-    x[0] = mulx(pow10_tab[expv[i]], y_ref);
-    x[2] = add(x[0], pow10_tab[expv[i]].half());
-    x[1] = sub(x[2], 1);
-    x[3] = sub(add(x[0], pow10_tab[expv[i]]), 1);
+    if (expv[i] > 0) {
+      x[0] = mulx(pow10_tab[expv[i]], y_ref);
+      x[2] = add(x[0], pow10_tab[expv[i]].half());
+      x[1] = sub(x[2], 1);
+      x[3] = sub(add(x[0], pow10_tab[expv[i]]), 1);
+    }
     x[4] = mp_uint256_t(&inpv[i*4]);
-    for (int k = 0; k < 5; ++k) {
+    for (int k = expv[i] > 0 ? 0 : 4; k < 5; ++k) {
       uint64_t y_res[2];
       int r_res = DivideUint224ByPowerOf10(y_res, x[k].w, expv[i]);
       if (y_res[0] != y_ref[0] || y_res[1] != y_ref[1] || r_res != r_ref[k]) {
