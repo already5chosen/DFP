@@ -25,7 +25,8 @@ static inline uint64_t __umulh(uint64_t a, uint64_t b) {
 //    in a sense that it causes no memory corruptions, traps or any other undefined actions
 int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned n)
 {
-  if (n <= 19) {
+  enum { DIV1_NMAX = 19, DIV2_NMAX = 27 };
+  if (n <= DIV1_NMAX) {
     // 10**n < 2**64. Single-pass division
     uint64_t src2 = src[2];
     uint64_t src1 = src[1];
@@ -40,7 +41,7 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
       uint64_t halfMulF;
       uint8_t  rshift;
       uint8_t  rshift2;
-    } recip_tab0[19] = {
+    } recip_tab0[DIV1_NMAX] = {
      {0xCCCCCCCCCCCCCCCC,                   10ULL / 2,  3,  0   }, //  1
      {0xA3D70A3D70A3D70A,                  100ULL / 2,  6,  0   }, //  2
      {0x83126E978D4FDF3B,                 1000ULL / 2,  9,  9-5 }, //  3
@@ -107,6 +108,49 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   uint64_t src1 = (src[2] << (65-n)) | (src[1] >> (n-1));
   uint64_t src0 = (src[1] << (65-n)) | (src[0] >> (n-1));
   uint64_t steaky = src[0] << (65-n); // MS bits = src[] % 2**(n-1)
+  if (n <= DIV2_NMAX) {
+    // 5**n < 2**64
+    static const struct {
+      uint64_t invF;
+      uint64_t mulF;
+      uint8_t  rshift;
+    } recip_tab1[DIV2_NMAX-DIV1_NMAX] = {
+     {0xBCE5086492111AEA,       95367431640625, 46 }, // 20
+     {0x971DA05074DA7BEE,      476837158203125, 48 }, // 21
+     {0xF1C90080BAF72CB1,     2384185791015625, 51 }, // 22
+     {0xC16D9A0095928A27,    11920928955078125, 53 }, // 23
+     {0x9ABE14CD44753B52,    59604644775390625, 55 }, // 24
+     {0xF79687AED3EEC551,   298023223876953125, 58 }, // 25
+     {0xC612062576589DDA,  1490116119384765625, 60 }, // 26
+     {0x9E74D1B791E07E48,  7450580596923828125, 62 }, // 27
+    };
+    unsigned rshift = recip_tab1[n-1-DIV1_NMAX].rshift;
+    uint64_t invF = recip_tab1[n-1-DIV1_NMAX].invF;
+    uint64_t mulF = recip_tab1[n-1-DIV1_NMAX].mulF;
+    const uint64_t MSK56 = (uint64_t)-1 >> 8;
+    // src2:src1:src0 contains at most 112+1+rshift+1 significant bits.
+    // It means that src2  contains at most 112+1+rshift+1-128=rshift-14 significant bits
+    // It can be shifted to the left by 64-(rshift-14)=78-rshift bits
+    uint64_t dh1 = (src2 << (78-rshift)) | (src1 >> (rshift-14));
+    uint64_t r1 = __umulh(dh1, invF) >> 6;
+    uint64_t d1 = (src1 << 8) | (src0 >> 56);
+    uint64_t d0 = src0 & MSK56;
+    uint64_t rem0 = d1 - r1*mulF;
+    uint64_t d0h = (rem0 << (62-rshift)) | (d0 >> (rshift-6));
+    d0 |= (rem0 << 56);
+    uint64_t r0 = __umulh(d0h, invF) >> 6;
+    uint64_t rem = d0 - r0*mulF;
+    // while (rem >= mulF) {
+    if (rem >= mulF) {
+      rem -= mulF;
+      r0  += 1;
+    }
+    steaky |= rem;
+    r1 += (r0 >> 56); r0 &= MSK56;
+    result[0] = (r1 << 55) | (r0 >> 1);
+    result[1] = r1 >> 9;
+    return (r0 & 1) * 2 | (steaky != 0);
+  }
 
   enum { N0 = 13 };
   if (n >= N0) { // divide by 5**13
