@@ -1,6 +1,5 @@
 #include "divide_pow10.h"
 #include <string.h>
-#include <stdio.h>
 
 #ifndef _MSC_VER
 static inline uint64_t __umulh(uint64_t a, uint64_t b) {
@@ -110,25 +109,29 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   uint64_t steaky = src[0] << (65-n); // MS bits = src[] % 2**(n-1)
 
   if (n > DIV3_NMAX) { // divide by 5**8
-    enum { DV = 390625ul };
-    uint64_t d = src2, rem, h, l;
-    src2 = d / DV; rem = d - src2*DV;
-
-    d = (rem << 32) | (src1 >> 32);
-    h = d / DV; rem = d - h*DV;
-    d = (rem << 32) | (src1 & (uint32_t)(-1));
-    l = d / DV; rem = d - l*DV;
-    src1 = (h << 32) | l;
-
-    d = (rem << 32) | (src0 >> 32);
-    h = d / DV; rem = d - h*DV;
-    d = (rem << 32) | (src0 & (uint32_t)(-1));
-    l = d / DV; rem = d - l*DV;
-    src0 = (h << 32) | l;
-
-    steaky |= rem;
     if (n > NMAX)
       return 0; // should not happen
+    enum { DV = 390625ul };
+    uint64_t d = src2, rem;
+    uint64_t r3 = d / DV; rem = d - r3*DV;
+
+    d = (rem << (64-19)) | (src1 >> 19);
+    uint64_t r2 = d / DV; rem = d - r2*DV;
+    src1 &= ((uint64_t)(-1) >> (64-19));
+
+    d = (rem << (64-19)) | (src1 << (64-38)) | (src0 >> 38);
+    uint64_t r1 = d / DV; rem = d - r1*DV;
+    src0 &= ((uint64_t)(-1) >> (64-38));
+
+    d = (rem << 38) | src0;
+    uint64_t r0 = d / DV; rem = d - r0*DV;
+
+    src2 = r3;
+    src1 = (r2 << 19) | (r1 >> (64-38));
+    src0 = (r1 << 38) | r0;
+
+    steaky |= rem;
+
     n -= DIV2_N;
   }
 
