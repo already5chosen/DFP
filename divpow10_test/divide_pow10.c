@@ -108,73 +108,112 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   uint64_t src0 = (src[1] << (65-n)) | (src[0] >> (n-1));
   uint64_t steaky = src[0] << (65-n); // MS bits = src[] % 2**(n-1)
 
-  if (n > DIV3_NMAX) { // divide by 5**8
-    if (n > NMAX)
-      return 0; // should not happen
-    enum { DV = 390625ul };
-    uint64_t d = src2, rem;
-    uint64_t r3 = d / DV; rem = d - r3*DV;
-
-    d = (rem << (64-19)) | (src1 >> 19);
-    uint64_t r2 = d / DV; rem = d - r2*DV;
-    src1 &= ((uint64_t)(-1) >> (64-19));
-
-    d = (rem << (64-19)) | (src1 << (64-38)) | (src0 >> 38);
-    uint64_t r1 = d / DV; rem = d - r1*DV;
-    src0 &= ((uint64_t)(-1) >> (64-38));
-
-    d = (rem << 38) | src0;
-    uint64_t r0 = d / DV; rem = d - r0*DV;
-
-    src2 = r3;
-    src1 = (r2 << 19) | (r1 >> (64-38));
-    src0 = (r1 << 38) | r0;
-
+  if (n <= DIV3_NMAX) {
+    // 5**n < 2**64
+    static const struct {
+      uint64_t invF;
+      uint64_t mulF;
+      uint8_t  rshift;
+    } recip_tab1[DIV3_NMAX-DIV1_NMAX] = {
+     {0xBCE5086492111AEA,       95367431640625, 46 }, // 20
+     {0x971DA05074DA7BEE,      476837158203125, 48 }, // 21
+     {0xF1C90080BAF72CB1,     2384185791015625, 51 }, // 22
+     {0xC16D9A0095928A27,    11920928955078125, 53 }, // 23
+     {0x9ABE14CD44753B52,    59604644775390625, 55 }, // 24
+     {0xF79687AED3EEC551,   298023223876953125, 58 }, // 25
+     {0xC612062576589DDA,  1490116119384765625, 60 }, // 26
+     {0x9E74D1B791E07E48,  7450580596923828125, 62 }, // 27
+    };
+    unsigned rshift = recip_tab1[n-1-DIV1_NMAX].rshift;
+    uint64_t invF = recip_tab1[n-1-DIV1_NMAX].invF;
+    uint64_t mulF = recip_tab1[n-1-DIV1_NMAX].mulF;
+    const uint64_t MSK56 = (uint64_t)-1 >> 8;
+    // src2:src1:src0 contains at most 112+1+rshift+1 significant bits.
+    // It means that src2  contains at most 112+1+rshift+1-128=rshift-14 significant bits
+    // It can be shifted to the left by 64-(rshift-14)=78-rshift bits
+    uint64_t dh1 = (src2 << (78-rshift)) | (src1 >> (rshift-14));
+    uint64_t r1 = __umulh(dh1, invF) >> 6;
+    uint64_t d1 = (src1 << 8) | (src0 >> 56);
+    uint64_t d0 = src0 & MSK56;
+    uint64_t rem0 = d1 - r1*mulF;
+    uint64_t d0h = (rem0 << (62-rshift)) | (d0 >> (rshift-6));
+    d0 |= (rem0 << 56);
+    uint64_t r0 = __umulh(d0h, invF) >> 6;
+    uint64_t rem = d0 - r0*mulF;
+    // while (rem >= mulF) {
+    if (rem >= mulF) {
+      rem -= mulF;
+      r0  += 1;
+    }
     steaky |= rem;
-
-    n -= DIV2_N;
+    r1 += (r0 >> 56); r0 &= MSK56;
+    result[0] = (r1 << 55) | (r0 >> 1);
+    result[1] = r1 >> 9;
+    return (r0 & 1) * 2 | (steaky != 0);
   }
 
-  // (n <= DIV3_NMAX) {
-  // 5**n < 2**64
+  if (n > NMAX)
+    return 0; // should not happen
+
+  // n < DIV3_NMAX  <= NMAX
+  // 5**n > 2**64
+  // divide by 5**n
   static const struct {
     uint64_t invF;
-    uint64_t mulF;
+    uint64_t mulF_l;
+    uint32_t mulF_h;
     uint8_t  rshift;
-  } recip_tab1[DIV3_NMAX-DIV1_NMAX] = {
-   {0xBCE5086492111AEA,       95367431640625, 46 }, // 20
-   {0x971DA05074DA7BEE,      476837158203125, 48 }, // 21
-   {0xF1C90080BAF72CB1,     2384185791015625, 51 }, // 22
-   {0xC16D9A0095928A27,    11920928955078125, 53 }, // 23
-   {0x9ABE14CD44753B52,    59604644775390625, 55 }, // 24
-   {0xF79687AED3EEC551,   298023223876953125, 58 }, // 25
-   {0xC612062576589DDA,  1490116119384765625, 60 }, // 26
-   {0x9E74D1B791E07E48,  7450580596923828125, 62 }, // 27
+  } recip_tab2[NMAX-DIV3_NMAX] = {
+   {0xFD87B5F28300CA0D, 0x04FCE5E3E2502611, 0x0002, 65-64 }, // 28
+   {0xCAD2F7F5359A3B3E, 0x18F07D736B90BE55, 0x000A, 67-64 }, // 29
+   {0xA2425FF75E14FC31, 0x7CB2734119D3B7A9, 0x0032, 69-64 }, // 30
+   {0x81CEB32C4B43FCF4, 0x6F7C40458122964D, 0x00FC, 71-64 }, // 31
+   {0xCFB11EAD453994BA, 0x2D6D415B85ACEF81, 0x04EE, 74-64 }, // 32
+   {0xA6274BBDD0FADD61, 0xE32246C99C60AD85, 0x18A6, 76-64 }, // 33
+   {0x84EC3C97DA624AB4, 0x6FAB61F00DE36399, 0x7B42, 78-64 }, // 34
   };
-  unsigned rshift = recip_tab1[n-1-DIV1_NMAX].rshift;
-  uint64_t invF = recip_tab1[n-1-DIV1_NMAX].invF;
-  uint64_t mulF = recip_tab1[n-1-DIV1_NMAX].mulF;
-  const uint64_t MSK56 = (uint64_t)-1 >> 8;
-  // src2:src1:src0 contains at most 112+1+rshift+1 significant bits.
-  // It means that src2  contains at most 112+1+rshift+1-128=rshift-14 significant bits
-  // It can be shifted to the left by 64-(rshift-14)=78-rshift bits
-  uint64_t dh1 = (src2 << (78-rshift)) | (src1 >> (rshift-14));
-  uint64_t r1 = __umulh(dh1, invF) >> 6;
-  uint64_t d1 = (src1 << 8) | (src0 >> 56);
-  uint64_t d0 = src0 & MSK56;
-  uint64_t rem0 = d1 - r1*mulF;
-  uint64_t d0h = (rem0 << (62-rshift)) | (d0 >> (rshift-6));
-  d0 |= (rem0 << 56);
-  uint64_t r0 = __umulh(d0h, invF) >> 6;
-  uint64_t rem = d0 - r0*mulF;
-  // while (rem >= mulF) {
-  if (rem >= mulF) {
-    rem -= mulF;
-    r0  += 1;
+  typedef unsigned __int128 uintex_t;
+  const unsigned rshift = recip_tab2[n-DIV3_NMAX-1].rshift;
+  const uint64_t invF   = recip_tab2[n-DIV3_NMAX-1].invF;   // 2**(rshift+128)/5**n
+  const uint64_t mulF_h = recip_tab2[n-DIV3_NMAX-1].mulF_h; // 5**n / 2^64
+  const uint64_t mulF_l = recip_tab2[n-DIV3_NMAX-1].mulF_l; // 5**n % 2^64
+  const uintex_t mulF   = ((uintex_t)mulF_h << 64) | mulF_l;// 5**n
+  const uint64_t MSK32  = (uint64_t)-1 >> (64-32);
+
+  uint64_t dh = src2;
+  uint64_t dl = src1;
+  uint64_t r2 = __umulh(dh, invF) >> rshift; // r2 aligned at bit 64
+  uintex_t d = ((uintex_t)dh << 64) | dl;
+  d -= (uintex_t)r2 * mulF_l;
+  d -= (uintex_t)(r2 * mulF_h) << 64;
+
+  dh = d >> 32;
+  dl = ((uint64_t)d << 32) | (src0 >> 32);
+  uint64_t r1 = __umulh(dh, invF) >> rshift; // r1 aligned at bit 32
+  d = ((uintex_t)dh << 64) | dl;
+  d -= (uintex_t)r1 * mulF_l;
+  d -= (uintex_t)(r1 * mulF_h) << 64;
+
+  dh = d >> 32;
+  dl = ((uint64_t)d << 32) | (src0 & MSK32);
+  uint64_t r0 = __umulh(dh, invF) >> rshift; // r0 aligned at bit 32
+  d = ((uintex_t)dh << 64) | dl;
+  d -= (uintex_t)r0 * mulF_l;
+  d -= (uintex_t)(r0 * mulF_h) << 64;
+
+  if (d >= mulF) {
+    d -= mulF;
+    r0 += 1;
   }
-  steaky |= rem;
-  r1 += (r0 >> 56); r0 &= MSK56;
-  result[0] = (r1 << 55) | (r0 >> 1);
-  result[1] = r1 >> 9;
+
+  steaky |= (uint64_t)d;
+  steaky |= (uint64_t)(d >> 64);
+
+  uintex_t rr = ((uintex_t)r2 << 64) | r0;
+  rr += (uintex_t)r1 << 32;
+  r0 = (uint64_t)rr;
+  r1 = (uint64_t)(rr >> 64);
+  result[1] = r1 >> 1;
+  result[0] = (r1 << 63) | (r0 >> 1);
   return (r0 & 1) * 2 | (steaky != 0);
 }
