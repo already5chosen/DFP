@@ -135,7 +135,36 @@ int main(int argz, char**argv)
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
   //
-  // Test 3 - Input width and scaling factor are close to maximum
+  // Test 3 - Input width and scaling factor are close to 175 bits
+  //
+  for (int i = 0; i < nInps; ++i) {
+    for (unsigned k = 0; k < 3; ++k)
+      inpv[i*4+k] = rndFunc();
+    inpv[i*4+2] = inpv[i*4+2] >> 17;
+    inpv[i*4+3] = 0;
+    expv[i] = FindNormalizationFactor(&inpv[i*4]);
+  }
+
+  if (!result_test(inpv.data(), expv.data(), nInps))
+    return 1;
+  time_test(inpv.data(), expv.data(), nInps, nIter);
+
+  //
+  // Test 4 - Input width and scaling factor are close to 200 bits
+  //
+  for (int i = 0; i < nInps; ++i) {
+    for (unsigned k = 0; k < 4; ++k)
+      inpv[i*4+k] = rndFunc();
+    inpv[i*4+3] &= 0xFF;
+    expv[i] = FindNormalizationFactor(&inpv[i*4]);
+  }
+
+  if (!result_test(inpv.data(), expv.data(), nInps))
+    return 1;
+  time_test(inpv.data(), expv.data(), nInps, nIter);
+
+  //
+  // Test 5 - Input width and scaling factor are close to maximum
   //
   for (int i = 0; i < nInps; ++i) {
     for (unsigned k = 0; k < 4; ++k)
@@ -147,6 +176,7 @@ int main(int argz, char**argv)
   if (!result_test(inpv.data(), expv.data(), nInps))
     return 1;
   time_test(inpv.data(), expv.data(), nInps, nIter);
+
 
   return 0;
 }
