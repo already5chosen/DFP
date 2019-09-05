@@ -172,13 +172,15 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
    {0xA6274BBDD0FADD61, 0xE32246C99C60AD85, 0x18A6, 76-64 }, // 33
    {0x84EC3C97DA624AB4, 0x6FAB61F00DE36399, 0x7B42, 78-64 }, // 34
   };
-  typedef unsigned __int128 uintex_t;
   const unsigned rshift = recip_tab2[n-DIV3_NMAX-1].rshift;
   const uint64_t invF   = recip_tab2[n-DIV3_NMAX-1].invF;   // 2**(rshift+128)/5**n
   const uint64_t mulF_h = recip_tab2[n-DIV3_NMAX-1].mulF_h; // 5**n / 2^64
   const uint64_t mulF_l = recip_tab2[n-DIV3_NMAX-1].mulF_l; // 5**n % 2^64
-  const uintex_t mulF   = ((uintex_t)mulF_h << 64) | mulF_l;// 5**n
   const uint64_t MSK32  = (uint64_t)-1 >> (64-32);
+
+#ifndef _MSC_VER
+  typedef unsigned __int128 uintex_t;
+  const uintex_t mulF   = ((uintex_t)mulF_h << 64) | mulF_l;// 5**n
 
   uint64_t dh = src2;
   uint64_t dl = src1;
@@ -196,7 +198,7 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
 
   dh = d >> 32;
   dl = ((uint64_t)d << 32) | (src0 & MSK32);
-  uint64_t r0 = __umulh(dh, invF) >> rshift; // r0 aligned at bit 32
+  uint64_t r0 = __umulh(dh, invF) >> rshift; // r0 aligned at bit 0
   d = ((uintex_t)dh << 64) | dl;
   d -= (uintex_t)r0 * mulF_l;
   d -= (uintex_t)(r0 * mulF_h) << 64;
@@ -213,7 +215,58 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   rr += (uintex_t)r1 << 32;
   r0 = (uint64_t)rr;
   r1 = (uint64_t)(rr >> 64);
+#else
+  uint64_t dh = src2;
+  uint64_t dl = src1;
+  uint64_t r2 = __umulh(dh, invF) >> rshift; // r2 aligned at bit 64
+  uint64_t prodL_h, prodL_l;
+  uint8_t borrow;
+  prodL_l = _umul128(r2, mulF_l, &prodL_h);
+  borrow = _subborrow_u64(0,      dl, prodL_l, &dl);
+  borrow = _subborrow_u64(borrow, dh, prodL_h, &dh);
+  dh -= r2 * mulF_h;
+
+  dh = (dh << 32) | (dl   >> 32);
+  dl = (dl << 32) | (src0 >> 32);
+  uint64_t r1 = __umulh(dh, invF) >> rshift; // r1 aligned at bit 32
+  prodL_l = _umul128(r1, mulF_l, &prodL_h);
+  borrow = _subborrow_u64(0,      dl, prodL_l, &dl);
+  borrow = _subborrow_u64(borrow, dh, prodL_h, &dh);
+  dh -= r1 * mulF_h;
+
+  dh = (dh << 32) | (dl   >> 32);
+  dl = (dl << 32) | (src0 & MSK32);
+  uint64_t r0 = __umulh(dh, invF) >> rshift; // r0 aligned at bit 0
+  prodL_l = _umul128(r0, mulF_l, &prodL_h);
+  borrow = _subborrow_u64(0,      dl, prodL_l, &dl);
+  borrow = _subborrow_u64(borrow, dh, prodL_h, &dh);
+  dh -= r0 * mulF_h;
+
+  uint64_t rem_h, rem_l;
+  borrow = _subborrow_u64(0,      dl, mulF_l, &rem_l);
+  borrow = _subborrow_u64(borrow, dh, mulF_h, &rem_h);
+  if (!borrow) {
+    dl = rem_l;
+    dh = rem_h;
+    r0 += 1;
+  }
+
+  steaky |= dl;
+  steaky |= dh;
+
+  uint64_t r1_h = r1 >> 32;
+  uint64_t r1_l = r1 << 32;
+  uint8_t carry;
+  carry = _addcarry_u64(0,     r1_l, r0, &r0);
+  carry = _addcarry_u64(carry, r1_h, r2, &r1);
+
+#endif
   result[1] = r1 >> 1;
   result[0] = (r1 << 63) | (r0 >> 1);
   return (r0 & 1) * 2 | (steaky != 0);
 }
+unsigned __int64 _umul128(
+   unsigned __int64 Multiplier,
+   unsigned __int64 Multiplicand,
+   unsigned __int64 *HighProduct
+);
