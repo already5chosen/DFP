@@ -101,35 +101,37 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   }
 
   // n > 19
-  // Divide source by 2**(n-1)
-  // Result of division contains at most 191 bit, so it fits easily in 3 64-bit word
-  uint64_t src2 = (src[3] << (65-n)) | (src[2] >> (n-1));
-  uint64_t src1 = (src[2] << (65-n)) | (src[1] >> (n-1));
-  uint64_t src0 = (src[1] << (65-n)) | (src[0] >> (n-1));
-  uint64_t steaky = src[0] << (65-n); // MS bits = src[] % 2**(n-1)
-
   if (n <= DIV3_NMAX) {
     // 5**n < 2**64
+    // Split divisor in two parts: 2**m and (5**n * 2**(n-m))
+    // The number m is selected in such way that a second divisor will be in range (2**62:2**63)
+    static const uint8_t shift_tab[DIV3_NMAX-DIV1_NMAX] = {
+      20-16, 21-14, 22-11, 23-9, 24-7, 25-4, 26-2, 27-0,
+    };
+    unsigned m = shift_tab[n-1-DIV1_NMAX];
+    uint64_t src2 = (src[3] << (65-m)) | (src[2] >> (m-1));
+    uint64_t src1 = (src[2] << (65-m)) | (src[1] >> (m-1));
+    uint64_t src0 = (src[1] << (65-m)) | (src[0] >> (m-1));
+    uint64_t steaky = src[0] << (65-m); // MS bits = src[] % 2**(m-1)
     static const struct {
       uint64_t invF;
       uint64_t mulF;
-      uint8_t  rshift;
     } recip_tab1[DIV3_NMAX-DIV1_NMAX] = {
-     {0xBCE5086492111AEA,       95367431640625, 46 }, // 20
-     {0x971DA05074DA7BEE,      476837158203125, 48 }, // 21
-     {0xF1C90080BAF72CB1,     2384185791015625, 51 }, // 22
-     {0xC16D9A0095928A27,    11920928955078125, 53 }, // 23
-     {0x9ABE14CD44753B52,    59604644775390625, 55 }, // 24
-     {0xF79687AED3EEC551,   298023223876953125, 58 }, // 25
-     {0xC612062576589DDA,  1490116119384765625, 60 }, // 26
-     {0x9E74D1B791E07E48,  7450580596923828125, 62 }, // 27
+     {0xBCE5086492111AEA,       95367431640625 << 16 }, // 20
+     {0x971DA05074DA7BEE,      476837158203125 << 14 }, // 21
+     {0xF1C90080BAF72CB1,     2384185791015625 << 11 }, // 22
+     {0xC16D9A0095928A27,    11920928955078125 <<  9 }, // 23
+     {0x9ABE14CD44753B52,    59604644775390625 <<  7 }, // 24
+     {0xF79687AED3EEC551,   298023223876953125 <<  4 }, // 25
+     {0xC612062576589DDA,  1490116119384765625 <<  2 }, // 26
+     {0x9E74D1B791E07E48,  7450580596923828125 <<  0 }, // 27
     };
-    unsigned rshift = recip_tab1[n-1-DIV1_NMAX].rshift;
+    const unsigned rshift = 62;
     uint64_t invF = recip_tab1[n-1-DIV1_NMAX].invF;
     uint64_t mulF = recip_tab1[n-1-DIV1_NMAX].mulF;
     const uint64_t MSK56 = (uint64_t)-1 >> 8;
     // src2:src1:src0 contains at most 112+1+rshift+1 significant bits.
-    // It means that src2  contains at most 112+1+rshift+1-128=rshift-14 significant bits
+    // It means that src2 contains at most 112+1+rshift+1-128=rshift-14 significant bits
     // It can be shifted to the left by 64-(rshift-14)=78-rshift bits
     uint64_t dh1 = (src2 << (78-rshift)) | (src1 >> (rshift-14));
     uint64_t r1 = __umulh(dh1, invF) >> 6;
@@ -155,7 +157,14 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   if (n > NMAX)
     return 0; // should not happen
 
-  // n < DIV3_NMAX  <= NMAX
+  // Divide source by 2**(n-1)
+  // Result of division contains at most 191 bit, so it fits easily in 3 64-bit word
+  uint64_t src2 = (src[3] << (65-n)) | (src[2] >> (n-1));
+  uint64_t src1 = (src[2] << (65-n)) | (src[1] >> (n-1));
+  uint64_t src0 = (src[1] << (65-n)) | (src[0] >> (n-1));
+  uint64_t steaky = src[0] << (65-n); // MS bits = src[] % 2**(n-1)
+
+  // n < DIV3_NMAX <= NMAX
   // 5**n > 2**64
   // divide by 5**n
   static const struct {
