@@ -24,7 +24,7 @@ int main(int argz, char**argv)
   if (argz < 2)
   {
     fprintf(stderr,
-      "divpow10_test - test speed and correctness of DivideUint224ByPowerOf10() routine.\n"
+      "divpow10_test - test speed and correctness of DivideDecimal68ByPowerOf10() routine.\n"
       "Usage:\n"
       "divpow10_test nInps [nIter]\n"
       "where\n"
@@ -91,7 +91,7 @@ int main(int argz, char**argv)
     unsigned es = e > 34 ? e - 34 : e1;
     uint64_t y_ref[2];
     for (;;) {
-      DivideUint224ByPowerOf10_ref(y_ref, x, es);
+      DivideDecimal68ByPowerOf10_ref(y_ref, x, es);
       if (y_ref[1] < (uint64_t(1) << 48))
         break; // no more than 112 bits
       ++es;
@@ -190,7 +190,7 @@ static void time_test(const uint64_t* inpv, const unsigned* expv, int nInps, int
     std::chrono::steady_clock::time_point hres_t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < nInps; ++i) {
       uint64_t y[2];
-      int r = DivideUint224ByPowerOf10(y, &inpv[i*4], expv[i]);
+      int r = DivideDecimal68ByPowerOf10(y, &inpv[i*4], expv[i]);
       dummy ^= y[0];
       dummy ^= y[1];
       dummy ^= r;
@@ -218,7 +218,7 @@ static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps)
   for (int i = 0; i < nInps; ++i) {
     int r_ref[5] = {0,1,2,3};
     uint64_t y_ref[2];
-    r_ref[4] = DivideUint224ByPowerOf10_ref(y_ref, &inpv[i*4], expv[i]);
+    r_ref[4] = DivideDecimal68ByPowerOf10_ref(y_ref, &inpv[i*4], expv[i]);
     mp_uint256_t x[5];
     if (expv[i] > 0) {
       x[0] = mulx(pow10_tab[expv[i]], y_ref);
@@ -229,7 +229,7 @@ static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps)
     x[4] = mp_uint256_t(&inpv[i*4]);
     for (int k = expv[i] > 0 ? 0 : 4; k < 5; ++k) {
       uint64_t y_res[2];
-      int r_res = DivideUint224ByPowerOf10(y_res, x[k].w, expv[i]);
+      int r_res = DivideDecimal68ByPowerOf10(y_res, x[k].w, expv[i]);
       if (y_res[0] != y_ref[0] || y_res[1] != y_ref[1] || r_res != r_ref[k]) {
         fprintf(stderr,
           "%016llx:%016llx:%016llx:%016llx / 1E%u\n"
