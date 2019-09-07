@@ -157,42 +157,50 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
   if (n > NMAX)
     return 0; // should not happen
 
-  unsigned m = n==28 ? 28-2 : n;
-  // Divide source by 2**(m-1)
-  // Result of division contains at most 191 bit, so it fits easily in 3 64-bit word
-  uint64_t src2 = (src[3] << (65-m)) | (src[2] >> (m-1));
-  uint64_t src1 = (src[2] << (65-m)) | (src[1] >> (m-1));
-  uint64_t src0 = (src[1] << (65-m)) | (src[0] >> (m-1));
-  uint64_t steaky = src[0] << (65-m); // MS bits = src[] % 2**(m-1)
-
   // n < DIV3_NMAX <= NMAX
   // 5**n > 2**64
   // divide by 5**n * 2**m, where m = n==28 ? 2 : 0
+  static const uint8_t nb_tab[NMAX-DIV3_NMAX] = { // maximal number of bits in src[] - 64*3
+    206 - 64*3, // 28
+    210 - 64*3, // 29
+    213 - 64*3, // 30
+    216 - 64*3, // 31
+    220 - 64*3, // 32
+    223 - 64*3, // 33
+    226 - 64*3, // 34
+  };
+  // Fetch upper 128 bits of the src[]
+  unsigned nb = nb_tab[n-DIV3_NMAX-1];
+  uint64_t srcH = (src[3] << (64-nb)) | (src[2] >> nb);
+  uint64_t srcL = (src[2] << (64-nb)) | (src[1] >> nb);
+
   static const struct {
-    uint64_t mulF_l;  // 5**n * 2**m, where m = n==28 ? 2 : 0
-    uint32_t mulF_h;
-    uint64_t invF_l;  // 2**195 / mulF
+    uint64_t mulF_l;  // 10**n / 2
+    uint64_t mulF_h;
+    uint64_t invF_l;  // 2**(nb+64*3+13) / mulF
     uint64_t invF_h;
   } recip_tab2[NMAX-DIV3_NMAX] = {
-   {0x13F3978F89409844, 0x0000000000000008, 0x8BCA9D6E188853FC, 0xFD87B5F28300CA0D }, // 28
-   {0x18F07D736B90BE55, 0x000000000000000A, 0x096EE45813A04330, 0xCAD2F7F5359A3B3E }, // 29
-   {0x7CB2734119D3B7A9, 0x0000000000000032, 0x684960DE6A5340A3, 0x289097FDD7853F0C }, // 30
-   {0x6F7C40458122964D, 0x00000000000000FC, 0x480EACF948770CED, 0x081CEB32C4B43FCF }, // 31
-   {0x2D6D415B85ACEF81, 0x00000000000004EE, 0x74CFBC31DB4B0295, 0x019F623D5A8A7329 }, // 32
-   {0xE32246C99C60AD85, 0x00000000000018A6, 0xB0F658D6C57566EA, 0x005313A5DEE87D6E }, // 33
-   {0x6FAB61F00DE36399, 0x0000000000007B42, 0x5697AB5E277DE162, 0x00109D8792FB4C49 }, // 34
+   {0x1F12813088000000, 0x000000001027E72F, 0xC5E54EB70C4429FE, 0x7EC3DAF941806506 }, // 28
+   {0x36B90BE550000000, 0x00000000A18F07D7, 0x096EE45813A04330, 0xCAD2F7F5359A3B3E }, // 29
+   {0x233A76F520000000, 0x000000064F964E68, 0xA1258379A94D028D, 0xA2425FF75E14FC31 }, // 30
+   {0x6048A59340000000, 0x0000003F1BDF1011, 0x80EACF948770CED7, 0x81CEB32C4B43FCF4 }, // 31
+   {0xC2D677C080000000, 0x0000027716B6A0AD, 0x67DE18EDA5814AF2, 0xCFB11EAD453994BA }, // 32
+   {0x9C60AD8500000000, 0x000018A6E32246C9, 0xECB1AD8AEACDD58E, 0xA6274BBDD0FADD61 }, // 33
+   {0x1BC6C73200000000, 0x0000F684DF56C3E0, 0xBD5AF13BEF0B113E, 0x84EC3C97DA624AB4 }, // 34
   };
   const uint64_t invF_h = recip_tab2[n-DIV3_NMAX-1].invF_h;
   const uint64_t invF_l = recip_tab2[n-DIV3_NMAX-1].invF_l;
   const uint64_t mulF_h = recip_tab2[n-DIV3_NMAX-1].mulF_h;
   const uint64_t mulF_l = recip_tab2[n-DIV3_NMAX-1].mulF_l;
+  uint64_t src1 = src[1];
+  uint64_t src0 = src[0];
 
 #ifndef _MSC_VER
   typedef unsigned __int128 uintex_t;
-  uintex_t rx = (uintex_t)src2 * invF_h;
-  rx += __umulh(src2, invF_l);
-  rx += __umulh(src1, invF_h);
-  rx >>= 3;
+  uintex_t rx = (uintex_t)srcH * invF_h;
+  rx += __umulh(srcH, invF_l);
+  rx += __umulh(srcL, invF_h);
+  rx >>= 13;
   uint64_t r1 = rx >> 64;
   uint64_t r0 = rx;
   src1 -= r1*mulF_l;
@@ -205,22 +213,20 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
     rem -= mulF;
     rx += 1;
   }
-
-  steaky |= (uint64_t)rem;
-  steaky |= (uint64_t)(rem >> 64);
+  int steaky = rem != 0;
 
   r1 = rx >> 64;
   r0 = rx;
 #else
   uint64_t r1;
-  uint64_t r0 = _umul128(src2, invF_h, &r1);
+  uint64_t r0 = _umul128(srcH, invF_h, &r1);
   uint8_t carry;
-  carry = _addcarry_u64(0,     r0, __umulh(src2, invF_l), &r0);
+  carry = _addcarry_u64(0,     r0, __umulh(srcH, invF_l), &r0);
   carry = _addcarry_u64(carry, r1, 0, &r1);
-  carry = _addcarry_u64(0,     r0, __umulh(src1, invF_h), &r0);
+  carry = _addcarry_u64(0,     r0, __umulh(srcL, invF_h), &r0);
   carry = _addcarry_u64(carry, r1, 0, &r1);
-  r0 = (r0 >> 3) | (r1 << (64-3));
-  r1 = (r1 >> 3);
+  r0 = (r0 >> 13) | (r1 << (64-13));
+  r1 = (r1 >> 13);
 
   src1 -= r1*mulF_l;
   src1 -= r0*mulF_h;
@@ -241,11 +247,10 @@ int DivideUint224ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned
     carry = _addcarry_u64(carry, r1, 0, &r1);
   }
 
-  steaky |= src0;
-  steaky |= src1;
+  int steaky = (src0|src1) != 0;
 #endif
 
   result[0] = (r1 << 63) | (r0 >> 1);
   result[1] = r1 >> 1;
-  return (r0 & 1) * 2 | (steaky != 0);
+  return (r0*2 & 2) | steaky;
 }
