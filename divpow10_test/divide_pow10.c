@@ -78,10 +78,10 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
         r1 = __umulh(src1, invF) >> (rshift-8);
       }
     } else {
-      // src2 contains at most rshift+1-16 significant bits
-      // It can be shifted to the left by 64-(rshift+1-16)=79-rshift bits
-      uint64_t dh1 = (src2 << (79-rshift)) | (src1 >> (rshift-15));
-      r1 = __umulh(dh1, invF) >> 7;
+      // src2 contains at most rshift+1-15 significant bits
+      // It can be shifted to the left by 64-(rshift+1-15)=78-rshift bits
+      uint64_t dh1 = (src2 << (78-rshift)) | (src1 >> (rshift-14));
+      r1 = __umulh(dh1, invF) >> 6;
     }
     uint64_t rem0 = d1 - r1*mulF;
     uint64_t d0h = (rem0 << (56-rshift2)) | (d0 >> rshift2);
@@ -130,11 +130,11 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
     uint64_t invF = recip_tab1[n-1-DIV1_NMAX].invF;
     uint64_t mulF = recip_tab1[n-1-DIV1_NMAX].mulF;
     const uint64_t MSK56 = (uint64_t)-1 >> 8;
-    // src2:src1:src0 contains at most 112+1+rshift+1 significant bits.
-    // It means that src2 contains at most 112+1+rshift+1-128=rshift-14 significant bits
-    // It can be shifted to the left by 64-(rshift-14)=78-rshift bits
-    uint64_t dh1 = (src2 << (78-rshift)) | (src1 >> (rshift-14));
-    uint64_t r1 = __umulh(dh1, invF) >> 6;
+    // src2:src1:src0 contains at most 113+1+rshift+1 significant bits.
+    // It means that src2 contains at most 113+1+rshift+1-128=rshift-13 significant bits
+    // It can be shifted to the left by 64-(rshift-13)=77-rshift bits
+    uint64_t dh1 = (src2 << (77-rshift)) | (src1 >> (rshift-13));
+    uint64_t r1 = __umulh(dh1, invF) >> 5;
     uint64_t d1 = (src1 << 8) | (src0 >> 56);
     uint64_t d0 = src0 & MSK56;
     uint64_t rem0 = d1 - r1*mulF;
