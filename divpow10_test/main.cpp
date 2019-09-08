@@ -12,7 +12,7 @@ extern "C" {
 };
 #include "multiprec_ut.h"
 
-static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps);
+static bool result_test(const uint64_t* inpv, const unsigned* expv, const uint64_t* outv, int nInps);
 static void time_test(const uint64_t* inpv, const unsigned* expv, int nInps, int nIter);
 static int FindNormalizationFactor(const uint64_t src[4]);
 static void InitPow10Table(void);
@@ -60,15 +60,52 @@ int main(int argz, char**argv)
     return 1;
   }
   nIter |= 1; // use odd number of iterations
+  nInps = (nInps + 1) & -2; // use even number of inputs
 
   InitPow10Table();
 
   std::vector<uint64_t> inpv(nInps*4);
+  std::vector<uint64_t> outv(nInps*2);
   std::vector<unsigned> expv(nInps);
 
   std::mt19937_64 rndGen;
   std::uniform_int_distribution<uint64_t> rndDistr(0, uint64_t(-1));
   auto rndFunc = std::bind ( rndDistr, std::ref(rndGen) );
+
+  static const unsigned n_ranges[][2] = {
+    { 0, 34},
+    { 1,  4},
+    { 1, 19},
+    {20, 27},
+    {28, 34},
+  };
+  for (unsigned ri = 0; ri < sizeof(n_ranges)/sizeof(n_ranges[0]); ++ri) {
+    unsigned r0 = n_ranges[ri][0];
+    unsigned rl = n_ranges[ri][1]-r0+1;
+    const uint64_t MSK32 = uint64_t(-1) >> (64-32);
+    for (int i = 0; i < nInps; ++i) {
+      uint64_t rndw[5];
+      for (int k = 0; k < 5; ++k)
+        rndw[k] = rndFunc();
+      unsigned n = (((rndw[0] & MSK32)*rl) >> 32) + r0;
+
+      mp_uint256_t xx = mulx(pow10_tab[34], mp_uint128_t(&rndw[1])); // result of division
+      mp_uint256_t rx = mulx(pow10_tab[n],  mp_uint128_t(&rndw[3])); // remainder of division
+      mp_uint256_t y = add(mulx(pow10_tab[n], mp_uint128_t(&xx.w[2])), mp_uint128_t(&rx.w[2]));
+
+      // store inputs for the tests
+      for (int k = 0; k < 4; ++k)
+        inpv[i*4+k] = y.w[k];
+      for (int k = 0; k < 2; ++k)
+        outv[i*2+k] = xx.w[2+k];
+      expv[i] = n;
+    }
+
+    if (!result_test(inpv.data(), expv.data(), outv.data(), nInps))
+      return 1;
+    time_test(inpv.data(), expv.data(), nInps, nIter);
+  }
+
 
   //
   // Test 1 - random distribution of input width and scaling factor
@@ -103,7 +140,7 @@ int main(int argz, char**argv)
     expv[i] = es;
   }
 
-  if (!result_test(inpv.data(), expv.data(), nInps))
+  if (!result_test(inpv.data(), expv.data(), outv.data(), nInps))
     return 1;
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
@@ -130,7 +167,7 @@ int main(int argz, char**argv)
       inpv[i*4+k] = x[k];
   }
 
-  if (!result_test(inpv.data(), expv.data(), nInps))
+  if (!result_test(inpv.data(), expv.data(), outv.data(), nInps))
     return 1;
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
@@ -145,7 +182,7 @@ int main(int argz, char**argv)
     expv[i] = FindNormalizationFactor(&inpv[i*4]);
   }
 
-  if (!result_test(inpv.data(), expv.data(), nInps))
+  if (!result_test(inpv.data(), expv.data(), outv.data(), nInps))
     return 1;
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
@@ -159,7 +196,7 @@ int main(int argz, char**argv)
     expv[i] = FindNormalizationFactor(&inpv[i*4]);
   }
 
-  if (!result_test(inpv.data(), expv.data(), nInps))
+  if (!result_test(inpv.data(), expv.data(), outv.data(), nInps))
     return 1;
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
@@ -173,7 +210,7 @@ int main(int argz, char**argv)
     expv[i] = FindNormalizationFactor(&inpv[i*4]);
   }
 
-  if (!result_test(inpv.data(), expv.data(), nInps))
+  if (!result_test(inpv.data(), expv.data(), outv.data(), nInps))
     return 1;
   time_test(inpv.data(), expv.data(), nInps, nIter);
 
@@ -213,7 +250,7 @@ static void time_test(const uint64_t* inpv, const unsigned* expv, int nInps, int
     printf("Blue moon\n");
 }
 
-static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps)
+static bool result_test(const uint64_t* inpv, const unsigned* expv, const uint64_t* outv, int nInps)
 {
   for (int i = 0; i < nInps; ++i) {
     int r_ref[5] = {0,1,2,3};
@@ -235,10 +272,12 @@ static bool result_test(const uint64_t* inpv, const unsigned* expv, int nInps)
           "%016llx:%016llx:%016llx:%016llx / 1E%u\n"
           "res: %016llx:%016llx,%d\n"
           "ref: %016llx:%016llx,%d\n"
+          "ref: %016llx:%016llx\n"
           "Fail!\n"
           ,x[k].w[3],x[k].w[2],x[k].w[1],x[k].w[0], expv[i]
           ,y_res[1],y_res[0], r_res
           ,y_ref[1],y_ref[0], r_ref[k]
+          ,outv[i*2+1],outv[i*2+0]
           );
         return false;
       }
