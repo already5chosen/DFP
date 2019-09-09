@@ -26,7 +26,7 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
 {
   enum { DIV1_NMAX = 4, NMAX = 34 };
   if (n <= DIV1_NMAX) {
-    // 10**n < 2**64. Single-pass division
+    // 10**(n+34) < 2**128
     uint64_t src1 = src[1];
     uint64_t src0 = src[0];
     if (n==0) {
@@ -35,46 +35,53 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
       return 0;
     }
     static const struct {
-      uint64_t invF;
-      uint64_t halfMulF;
-      uint8_t  rshift;
-      uint8_t  rshift2;
+      uint64_t mulF;    // 10**n / 2
+      uint64_t invF_l;  // 2**130 / mulF
+      uint64_t invF_h;
     } recip_tab0[DIV1_NMAX] = {
-     {0xCCCCCCCCCCCCCCCC,                   10ULL / 2,  3,  0   }, //  1
-     {0xA3D70A3D70A3D70A,                  100ULL / 2,  6,  0   }, //  2
-     {0x83126E978D4FDF3B,                 1000ULL / 2,  9,  9-5 }, //  3
-     {0xD1B71758E219652B,                10000ULL / 2, 13, 13-5 }, //  4
+     {   10 / 2, 0xCCCCCCCCCCCCCCCC, 0xCCCCCCCCCCCCCCCC }, //  1
+     {  100 / 2, 0x47AE147AE147AE14, 0x147AE147AE147AE1 }, //  2
+     { 1000 / 2, 0xED916872B020C49B, 0x020C49BA5E353F7C }, //  3
+     {10000 / 2, 0x4AF4F0D844D013A9, 0x00346DC5D6388659 }, //  4
     };
-    uint64_t invF = recip_tab0[n-1].invF;
-    uint64_t halfMulF = recip_tab0[n-1].halfMulF;
-    uint64_t mulF = halfMulF+halfMulF;
-    unsigned rshift = recip_tab0[n-1].rshift;
-    unsigned rshift2 = recip_tab0[n-1].rshift2;
-    const uint64_t MSK56 = (uint64_t)-1 >> 8;
-
-    uint64_t d1 = (src1 << 8) | (src0 >> 56);
-    uint64_t d0 = src0 & MSK56;
-    uint64_t r1, r0;
-    if (n <= 2) {
-      r1 = __umulh(d1, invF) >> rshift;
-    } else {
-      r1 = __umulh(src1, invF) >> (rshift-8);
-    }
-    uint64_t rem0 = d1 - r1*mulF;
-    uint64_t d0h = (rem0 << (56-rshift2)) | (d0 >> rshift2);
-    d0 |= (rem0 << 56);
-    r0 = __umulh(d0h, invF) >> (rshift-rshift2);
-    uint64_t rem = d0 - r0*mulF;
-    // if (n==19)printf("rem0=%20llu rem=%20llu\n", rem0, rem);
-    // while (rem >= mulF) {
+    const uint64_t invF_h = recip_tab0[n-1].invF_h;
+    const uint64_t invF_l = recip_tab0[n-1].invF_l;
+    const uint64_t mulF   = recip_tab0[n-1].mulF;
+#ifndef _MSC_VER
+    typedef unsigned __int128 uintex_t;
+    uintex_t rx = (uintex_t)src1 * invF_h;
+    rx += __umulh(src1, invF_l);
+    rx += __umulh(src0, invF_h);
+    rx >>= 2;
+    uint64_t rem = src0 - (uint64_t)rx * mulF;
     if (rem >= mulF) {
       rem -= mulF;
-      r0  += 1;
+      rx  += 1;
     }
-    r1 += (r0 >> 56); r0 &= MSK56;
-    result[0] = (r1 << 56) | r0;
-    result[1] = r1 >> 8;
-    return rem < halfMulF ? (rem != 0) : (rem != halfMulF) + 2;
+    uint64_t r1 = rx >> 64;
+    uint64_t r0 = rx;
+#else
+    uint64_t r1;
+    uint64_t r0 = _umul128(src1, invF_h, &r1);
+    uint8_t carry;
+    carry = _addcarry_u64(0,     r0, __umulh(src1, invF_l), &r0);
+    carry = _addcarry_u64(carry, r1, 0, &r1);
+    carry = _addcarry_u64(0,     r0, __umulh(src0, invF_h), &r0);
+    carry = _addcarry_u64(carry, r1, 0, &r1);
+    r0 = (r0 >> 2) | (r1 << (64-2));
+    r1 = (r1 >> 2);
+
+    uint64_t rem = src0 - r0 * mulF;
+    if (rem >= mulF) {
+      rem -= mulF;
+      carry = _addcarry_u64(0,     r0, 1, &r0);
+      carry = _addcarry_u64(carry, r1, 0, &r1);
+    }
+#endif
+    int steaky = rem != 0;
+    result[0] = (r1 << 63) | (r0 >> 1);
+    result[1] = r1 >> 1;
+    return (r0*2 & 2) | steaky;
   }
 
   if (n > NMAX)
@@ -167,8 +174,7 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
 #ifndef _MSC_VER
   typedef unsigned __int128 uintex_t;
   uintex_t rx = (uintex_t)srcH * invF_h;
-  // rx += __umulh(srcH, invF_l);
-  rx += ((uintex_t)srcH * invF_l) >> 64;
+  rx += __umulh(srcH, invF_l);
   rx += __umulh(srcL, invF_h);
   rx >>= 13;
   uint64_t r1 = rx >> 64;
