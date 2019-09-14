@@ -1,4 +1,5 @@
 #include <stdint.h>
+#define REPORT_UNDERFLOWS 0
 
 // DivideDecimal68ByPowerOf10 - Divide unsigned integer number by power of ten
 //
@@ -16,3 +17,7 @@
 // 2. When src >= 10**n * 2**112 the results are incorrect, but the call is still legal
 //    in a sense that it causes no memory corruptions, traps or any other undefined actions
 int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsigned n);
+
+#if REPORT_UNDERFLOWS
+extern uint8_t gl_underflow;
+#endif
