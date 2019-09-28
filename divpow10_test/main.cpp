@@ -123,16 +123,29 @@ int main(int argz, char**argv)
 
     #if REPORT_UNDERFLOWS
     if (ri==0) {
-      unsigned uu_cnt[35][2] = {{0}};
+      unsigned uu_cnt[35][8] = {{0}};
       for (int i = 0; i < nInps; ++i) {
-        uint64_t dummy[2];
         unsigned n = expv[i];
-        DivideDecimal68ByPowerOf10(dummy, inpv[i].w, n);
+        mp_uint256_t src[7];
+        src[0] = mulx(pow10_tab[n], outv[i].div);
+        src[1] = add(src[0], 1);
+        src[3] = add(src[0], pow10_tab[n].half());
+        src[2] = sub(src[3], 1);
+        src[4] = add(src[3], 1);
+        src[5] = add(src[0], sub(pow10_tab[n],1));
+        src[6] = inpv[i];
+        for (int k = 0; k < 7; ++k) {
+          uint64_t dummy[2];
+          DivideDecimal68ByPowerOf10(dummy, src[k].w, n);
+          uu_cnt[n][k+1] += gl_underflow;
+        }
         uu_cnt[n][0] += 1;
-        uu_cnt[n][1] += gl_underflow;
       }
       for (int i = 0; i < 35; ++i) {
-        printf("%2d %8u %8u\n", i, uu_cnt[i][0], uu_cnt[i][1]);
+        printf("%2d", i);
+        for (int k = 0; k < 8; ++k)
+          printf(" %8u", uu_cnt[i][k]);
+        printf("\n");
       }
     }
     #endif
