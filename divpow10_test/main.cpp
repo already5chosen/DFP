@@ -235,20 +235,31 @@ static int calc_ret(const mp_uint128_t& rem, const mp_uint128_t& divisor)
 static bool result_test(const mp_uint256_t* inpv, const unsigned* expv, const div_rem_t* outv, int nInps)
 {
   for (int i = 0; i < nInps; ++i) {
-    int r_ref[5] = {0,1,2,3};
-    r_ref[4] = calc_ret(outv[i].rem, pow10_tab[expv[i]]);
-    mp_uint256_t x[5];
-    if (expv[i] > 0) {
-      x[0] = mulx(pow10_tab[expv[i]], outv[i].div);
-      x[2] = add(x[0], pow10_tab[expv[i]].half());
-      x[1] = sub(x[2], 1);
-      x[3] = sub(add(x[0], pow10_tab[expv[i]]), 1);
+    int r_ref[9] = {0, 0,1,2,3, 0,1,2,3};
+    r_ref[0] = calc_ret(outv[i].rem, pow10_tab[expv[i]]);
+    mp_uint256_t x[9];
+    mp_uint128_t y[9];
+    for (int k = 0; k < 5; ++k)
+      y[k] = outv[i].div;
+    for (int k = 5; k < 9; ++k)
+      y[k] = mp_uint128_t(0, outv[i].div.w[1]);
+    x[0] = mp_uint256_t(inpv[i]);
+    int nk = expv[i] > 0 ? 9 : 1;
+    if (nk > 1) {
+      x[1] = mulx(pow10_tab[expv[i]], outv[i].div);
+      x[3] = add(x[1], pow10_tab[expv[i]].half());
+      x[2] = sub(x[3], 1);
+      x[4] = sub(add(x[1], pow10_tab[expv[i]]), 1);
+      
+      x[5] = mulx(pow10_tab[expv[i]], y[5]);
+      x[6] = add(x[5], 1);
+      x[7] = add(x[5], pow10_tab[expv[i]].half());
+      x[8] = add(x[7], 1);
     }
-    x[4] = mp_uint256_t(inpv[i]);
-    for (int k = expv[i] > 0 ? 0 : 4; k < 5; ++k) {
+    for (int k = 0; k < nk; ++k) {
       uint64_t y_res[2];
       int r_res = DivideDecimal68ByPowerOf10(y_res, x[k].w, expv[i]);
-      if (y_res[0] != outv[i].div.w[0] || y_res[1] != outv[i].div.w[1] || r_res != r_ref[k]) {
+      if (y_res[0] != y[k].w[0] || y_res[1] != y[k].w[1] || r_res != r_ref[k]) {
         fprintf(stderr,
           "%016llx:%016llx:%016llx:%016llx / 1E%u\n"
           "res: %016llx:%016llx,%d\n"
