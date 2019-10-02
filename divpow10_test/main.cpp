@@ -250,7 +250,7 @@ static bool result_test(const mp_uint256_t* inpv, const unsigned* expv, const di
       x[3] = add(x[1], pow10_tab[expv[i]].half());
       x[2] = sub(x[3], 1);
       x[4] = sub(add(x[1], pow10_tab[expv[i]]), 1);
-      
+
       x[5] = mulx(pow10_tab[expv[i]], y[5]);
       x[6] = add(x[5], 1);
       x[7] = add(x[5], pow10_tab[expv[i]].half());
@@ -267,7 +267,7 @@ static bool result_test(const mp_uint256_t* inpv, const unsigned* expv, const di
           "Fail!\n"
           ,x[k].w[3],x[k].w[2],x[k].w[1],x[k].w[0], expv[i]
           ,y_res[1],y_res[0], r_res
-          ,outv[i].div.w[1], outv[i].div.w[0], r_ref[k]
+          ,y[k].w[1], y[k].w[0], r_ref[k]
           );
         return false;
       }
