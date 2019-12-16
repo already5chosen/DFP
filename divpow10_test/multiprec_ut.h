@@ -22,6 +22,16 @@ struct mp_uint128_t {
   uint64_t w[2];
 };
 
+mp_uint128_t double2uint128(double a);
+
+static inline int cmp(const mp_uint128_t& a, const mp_uint128_t& b) {
+  if (a.w[1] > b.w[1]) return 1;
+  if (a.w[1] < b.w[1]) return -1;
+  if (a.w[0] > b.w[0]) return 1;
+  if (a.w[0] < b.w[0]) return -1;
+  return 0;
+}
+
 struct mp_uint256_t {
   mp_uint256_t() { w[0]=w[1]=w[2]=w[3]=0; }
   mp_uint256_t(uint64_t a) { w[0]=a; w[1]=w[2]=w[3]=0; }

@@ -123,18 +123,40 @@ int main(int argz, char**argv)
 
     #if REPORT_UNDERFLOWS
     if (ri==0) {
-      unsigned uu_cnt[35][8] = {{0}};
+      unsigned uu_cnt[35][12] = {{0}};
       for (int i = 0; i < nInps; ++i) {
         unsigned n = expv[i];
-        mp_uint256_t src[7];
-        src[0] = mulx(pow10_tab[n], outv[i].div);
-        src[1] = add(src[0], 1);
-        src[3] = add(src[0], pow10_tab[n].half());
-        src[2] = sub(src[3], 1);
-        src[4] = add(src[3], 1);
-        src[5] = add(src[0], sub(pow10_tab[n],1));
-        src[6] = inpv[i];
-        for (int k = 0; k < 7; ++k) {
+        mp_uint128_t offs = uint64_t(0);
+        if (n > 0) {
+          // generate offset exponentially distributed on range [2..10**n/2-1]
+          const double LOG2_10  = 3.3219280948873623478703194294894;
+          const double POW2_n64 = 0.5/(uint64_t(1) << 63);
+          double Lx = (LOG2_10*n - 2.0)*POW2_n64;
+          double dOffs = floor(exp2(Lx*rndFunc()+1.0));
+          offs = double2uint128(dOffs);
+          double dULP = floor(nextafter(dOffs, 1e35)) - dOffs;
+          if (dULP > 0) {
+            mp_uint256_t offsInc = mulx(double2uint128(dULP), rndFunc());
+            offs += mp_uint128_t(&offsInc.w[2]);
+          }
+          if (cmp(offs, pow10_tab[n].half()) >= 0) {
+            offs = pow10_tab[n].half();
+            offs.w[0] -= 1;
+          }
+        }
+        mp_uint256_t src[11];
+        src[0]  = mulx(pow10_tab[n], outv[i].div);
+        src[5]  = add(src[0], pow10_tab[n].half());
+        src[1]  = add(src[0], 1);
+        src[2]  = add(src[0], offs);
+        src[3]  = sub(src[5], offs);
+        src[4]  = sub(src[5], 1);
+        src[6]  = add(src[5], 1);
+        src[7]  = add(src[5], offs);
+        src[8]  = add(src[3], pow10_tab[n].half());
+        src[9]  = add(src[4], pow10_tab[n].half());
+        src[10] = inpv[i];
+        for (int k = 0; k < 11; ++k) {
           uint64_t dummy[2];
           DivideDecimal68ByPowerOf10(dummy, src[k].w, n);
           uu_cnt[n][k+1] += gl_underflow;
@@ -143,8 +165,8 @@ int main(int argz, char**argv)
       }
       for (int i = 0; i < 35; ++i) {
         printf("%2d", i);
-        for (int k = 0; k < 8; ++k)
-          printf(" %8u", uu_cnt[i][k]);
+        for (int k = 0; k < 12; ++k)
+          printf(" %6u", uu_cnt[i][k]);
         printf("\n");
       }
     }

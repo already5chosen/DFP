@@ -1,3 +1,4 @@
+#include <cmath>
 #include "multiprec_ut.h"
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -10,6 +11,26 @@ static inline uint64_t _umul128(uint64_t a, uint64_t b, uint64_t* xh) {
   return (uint64_t)x;
 }
 #endif
+
+mp_uint128_t double2uint128(double x)
+{
+  int e;
+  double m = frexp(x, &e);
+  int re = e > 60 ? 60 : e;
+  uint64_t w64 = uint64_t(ldexp(m, re));
+  int ls = e - re;
+  if (ls <= 0)  return mp_uint128_t(w64);
+  if (ls < 64)  return mp_uint128_t(w64 << ls, w64 >> (64-ls));
+  if (ls < 128) return mp_uint128_t(0,         w64 << (ls-64));
+  return mp_uint128_t();
+}
+
+mp_uint128_t& mp_uint128_t::add(const mp_uint128_t& a)
+{
+  w[0] += a.w[0];
+  w[1] += a.w[1] + (w[0] < a.w[0]);
+  return *this;
+}
 
 mp_uint128_t& mp_uint128_t::mul(uint64_t a)
 {
