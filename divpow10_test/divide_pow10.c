@@ -34,122 +34,141 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
   }
 
   static const struct {
-    int8_t   srcH_offs; // maximal number of bits in src[] rounded up to the whole octet - 128 / 8
-    uint8_t  srcH_msk;
-    uint8_t  rsrv[6];
-    uint64_t mulF_l;  // 10**n / 2
-    uint64_t mulF_h;
-    uint64_t invF_l;  // 2**(srcH_offs*8+130) / mulF
-    uint64_t invF_h;
+    uint8_t  src_offs;  // maximal number of bits in src[] rounded up to the whole octet - 128 / 8 clipped to non-negative
+                        // invF = 2**(src_offs*8+160) / mulF
+    uint8_t  src_offsLL;
+    uint8_t  rem_offs;  // (n-1)/8
+    uint8_t  shift_LL;
+    uint32_t invF_l;    // invF[31:0]
+    uint64_t invF_m;    // invF[95:32]
+    uint64_t invF_h;    // invF[160:96]
+    uint64_t mulF_l;    // (10**n / 2 / 256**rem_offs) % 2**64
+    uint32_t steaky_msk;
   } recip_tab[NMAX] = {
-   { -1, 255, {0}, 0x0000000000000005, 0x0000000000000000, 0xCCCCCCCCCCCCCCCC, 0x0CCCCCCCCCCCCCCC }, //  1
-   { -1, 255, {0}, 0x0000000000000032, 0x0000000000000000, 0x147AE147AE147AE1, 0x0147AE147AE147AE }, //  2
-   {  0,   0, {0}, 0x00000000000001F4, 0x0000000000000000, 0xD916872B020C49BA, 0x20C49BA5E353F7CE }, //  3
-   {  0,   0, {0}, 0x0000000000001388, 0x0000000000000000, 0xAF4F0D844D013A92, 0x0346DC5D63886594 }, //  4
-   {  1,   0, {0}, 0x000000000000C350, 0x0000000000000000, 0x87E7C06E19B90EA9, 0x53E2D6238DA3C211 }, //  5
-   {  1,   0, {0}, 0x000000000007A120, 0x0000000000000000, 0x5A63F9A49C2C1B10, 0x08637BD05AF6C69B }, //  6
-   {  2,   0, {0}, 0x00000000004C4B40, 0x0000000000000000, 0x3D32907604691B4C, 0xD6BF94D5E57A42BC }, //  7
-   {  2,   0, {0}, 0x0000000002FAF080, 0x0000000000000000, 0x9FB841A566D74F87, 0x15798EE2308C39DF }, //  8
-   {  2,   0, {0}, 0x000000001DCD6500, 0x0000000000000000, 0x5CC5A02A23E254C0, 0x0225C17D04DAD296 }, //  9
-   {  3,   0, {0}, 0x000000012A05F200, 0x0000000000000000, 0xAD5CD10396A21346, 0x36F9BFB3AF7B756F }, // 10
-   {  3,   0, {0}, 0x0000000BA43B7400, 0x0000000000000000, 0xF7BC7B4D28A9CEBA, 0x057F5FF85E592557 }, // 11
-   {  4,   0, {0}, 0x000000746A528800, 0x0000000000000000, 0xF93F87B7442E45D3, 0x8CBCCC096F5088CB }, // 12
-   {  4,   0, {0}, 0x0000048C27395000, 0x0000000000000000, 0x32865A5F206B06FB, 0x0E12E13424BB40E1 }, // 13
-   {  4,   0, {0}, 0x00002D79883D2000, 0x0000000000000000, 0x1EA70909833DE719, 0x016849B86A12B9B0 }, // 14
-   {  5,   0, {0}, 0x0001C6BF52634000, 0x0000000000000000, 0x43E74DC052FD8284, 0x24075F3DCEAC2B36 }, // 15
-   {  5,   0, {0}, 0x0011C37937E08000, 0x0000000000000000, 0x6D30BAF9A1E626A6, 0x039A5652FB113785 }, // 16
-   {  6,   0, {0}, 0x00B1A2BC2EC50000, 0x0000000000000000, 0x84DF7F5CFD6A43E1, 0x5C3BD5191B525A24 }, // 17
-   {  6,   0, {0}, 0x06F05B59D3B20000, 0x0000000000000000, 0x73AFF322E62439FC, 0x09392EE8E921D5D0 }, // 18
-   {  7,   0, {0}, 0x4563918244F40000, 0x0000000000000000, 0x2B31E9E3D06C32E5, 0xEC1E4A7DB69561A5 }, // 19
-   {  7,   0, {0}, 0xB5E3AF16B1880000, 0x0000000000000002, 0x511E976394D79EB0, 0x179CA10C9242235D }, // 20
-   {  7,   0, {0}, 0x1AE4D6E2EF500000, 0x000000000000001B, 0xBB4FDBF05BAF2978, 0x025C768141D369EF }, // 21
-   {  8,   0, {0}, 0x0CF064DD59200000, 0x000000000000010F, 0x54C931A2C4B758CE, 0x3C7240202EBDCB2C }, // 22
-   {  8,   0, {0}, 0x8163F0A57B400000, 0x0000000000000A96, 0x3BADB829E078BC14, 0x060B6CD004AC9451 }, // 23
-   {  9,   0, {0}, 0x0DE76676D0800000, 0x00000000000069E1, 0xC4926A9672793542, 0x9ABE14CD44753B52 }, // 24
-   {  9,   0, {0}, 0x8B0A00A425000000, 0x00000000000422CA, 0x13A83DDBD83F5220, 0x0F79687AED3EEC55 }, // 25
-   {  9,   0, {0}, 0x6E64066972000000, 0x0000000000295BE9, 0xB52A6C95FC065503, 0x018C240C4AECB13B }, // 26
-   { 10,   0, {0}, 0x4FE8401E74000000, 0x00000000019D971E, 0x1DD7A89933D54D1F, 0x279D346DE4781F92 }, // 27
-   { 10,   0, {0}, 0x1F12813088000000, 0x000000001027E72F, 0x362F2A75B862214F, 0x03F61ED7CA0C0328 }, // 28
-   { 11,   0, {0}, 0x36B90BE550000000, 0x00000000A18F07D7, 0x04B7722C09D02198, 0x65697BFA9ACD1D9F }, // 29
-   { 11,   0, {0}, 0x233A76F520000000, 0x000000064F964E68, 0x1A1258379A94D028, 0x0A2425FF75E14FC3 }, // 30
-   { 11,   0, {0}, 0x6048A59340000000, 0x0000003F1BDF1011, 0xE901D59F290EE19D, 0x01039D66589687F9 }, // 31
-   { 12,   0, {0}, 0xC2D677C080000000, 0x0000027716B6A0AD, 0x4CFBC31DB4B0295E, 0x19F623D5A8A73297 }, // 32
-   { 12,   0, {0}, 0x9C60AD8500000000, 0x000018A6E32246C9, 0x87B2C6B62BAB3756, 0x02989D2EF743EB75 }, // 33
-   { 13,   0, {0}, 0x1BC6C73200000000, 0x0000F684DF56C3E0, 0x5EAD789DF785889F, 0x42761E4BED31255A }, // 34
-  };
+ { 0, 24, 0,  0, 0xc3c598d9, 0x33333333333335db, 0x3333333333333333, 0x0000000000000005, 0x00000000 }, //  1
+ { 0, 24, 0,  0, 0xecf73956, 0x51eb851eb851eb8b, 0x051eb851eb851eb8, 0x0000000000000032, 0x00000000 }, //  2
+ { 1,  0, 0, 24, 0xe4fb256b, 0x645a1cac083126fa, 0x83126e978d4fdf3b, 0x00000000000001f4, 0x00000000 }, //  3
+ { 0, 24, 0,  0, 0x4ab8af47, 0x52bd3c36113404ea, 0x000d1b71758e2196, 0x0000000000001388, 0x00000000 }, //  4
+ { 1,  0, 0, 24, 0xa80de8e4, 0x461f9f01b866e43a, 0x014f8b588e368f08, 0x000000000000c350, 0x00000000 }, //  5
+ { 1,  0, 0, 24, 0x43f71d62, 0x6d698fe69270b06c, 0x00218def416bdb1a, 0x000000000007a120, 0x00000000 }, //  6
+ { 2,  0, 0, 16, 0x32356e7d, 0xf0f4ca41d811a46d, 0x035afe535795e90a, 0x00000000004c4b40, 0x00000000 }, //  7
+ { 2,  0, 0, 16, 0x1e9eae1a, 0x7e7ee106959b5d3e, 0x0055e63b88c230e7, 0x0000000002faf080, 0x00000000 }, //  8
+ { 2,  0, 1, 16, 0x030fdd89, 0x59731680a88f8953, 0x00089705f4136b4a, 0x00000000001dcd65, 0x000000ff }, //  9
+ { 4,  0, 1,  0, 0x2fbf3807, 0xb573440e5a884d1b, 0xdbe6fecebdedd5be, 0x00000000012a05f2, 0x000000ff }, // 10
+ { 4,  0, 1,  0, 0x1e5fe796, 0xdef1ed34a2a73ae9, 0x15fd7fe17964955f, 0x000000000ba43b74, 0x000000ff }, // 11
+ { 4,  0, 1,  0, 0x4fd663ea, 0x2fe4fe1edd10b917, 0x0232f33025bd4223, 0x00000000746a5288, 0x000000ff }, // 12
+ { 4,  0, 1,  0, 0xee623d30, 0x84ca19697c81ac1b, 0x00384b84d092ed03, 0x000000048c273950, 0x000000ff }, // 13
+ { 4,  0, 1,  0, 0x64a36c84, 0xc07a9c24260cf79c, 0x0005a126e1a84ae6, 0x0000002d79883d20, 0x000000ff }, // 14
+ { 5,  1, 1,  0, 0x1057a6e3, 0xd90f9d37014bf60a, 0x00901d7cf73ab0ac, 0x000001c6bf526340, 0x000000ff }, // 15
+ { 5,  1, 1,  0, 0x9b3bf716, 0x15b4c2ebe687989a, 0x000e69594bec44de, 0x000011c37937e080, 0x000000ff }, // 16
+ { 6,  2, 2,  0, 0x85ff1be0, 0x92137dfd73f5a90f, 0x0170ef54646d4968, 0x000000b1a2bc2ec5, 0x0000ffff }, // 17
+ { 6,  2, 2,  0, 0xf3ccb5fc, 0x41cebfcc8b9890e7, 0x0024e4bba3a48757, 0x000006f05b59d3b2, 0x0000ffff }, // 18
+ { 7,  3, 2,  0, 0x94789948, 0x94acc7a78f41b0cb, 0x03b07929f6da5586, 0x00004563918244f4, 0x0000ffff }, // 19
+ { 7,  3, 2,  0, 0xc20c0f54, 0x75447a5d8e535e7a, 0x005e72843249088d, 0x0002b5e3af16b188, 0x0000ffff }, // 20
+ { 7,  3, 2,  0, 0xe03467ee, 0xbeed3f6fc16ebca5, 0x000971da05074da7, 0x001b1ae4d6e2ef50, 0x0000ffff }, // 21
+ { 8,  4, 2,  0, 0x3870cb14, 0xb15324c68b12dd63, 0x00f1c90080baf72c, 0x010f0cf064dd5920, 0x0000ffff }, // 22
+ { 8,  4, 2,  0, 0x5271ade8, 0x44eeb6e0a781e2f0, 0x00182db34012b251, 0x0a968163f0a57b40, 0x0000ffff }, // 23
+ { 9,  5, 2,  0, 0x0b5e30d8, 0x4b1249aa59c9e4d5, 0x026af8533511d4ed, 0x69e10de76676d080, 0x0000ffff }, // 24
+ { 9,  5, 3,  0, 0x812304e2, 0x544ea0f76f60fd48, 0x003de5a1ebb4fbb1, 0x0422ca8b0a00a425, 0x00ffffff }, // 25
+ { 9,  5, 3,  0, 0x0ce9e6e3, 0xeed4a9b257f01954, 0x00063090312bb2c4, 0x295be96e64066972, 0x00ffffff }, // 26
+ {10,  6, 3,  0, 0x7dca49f1, 0x48775ea264cf5534, 0x009e74d1b791e07e, 0x9d971e4fe8401e74, 0x00ffffff }, // 27
+ {10,  6, 3,  0, 0x3fc76dcb, 0xa0d8bca9d6e18885, 0x000fd87b5f28300c, 0x27e72f1f12813088, 0x00ffffff }, // 28
+ {11,  7, 3,  0, 0x60be2df0, 0x7c12ddc8b0274086, 0x0195a5efea6b3476, 0x8f07d736b90be550, 0x00ffffff }, // 29
+ {11,  7, 3,  0, 0xa34637cb, 0x0c684960de6a5340, 0x00289097fdd7853f, 0x964e68233a76f520, 0x00ffffff }, // 30
+ {11,  7, 3,  0, 0x76ba38c7, 0xe7a407567ca43b86, 0x00040e7599625a1f, 0xdf10116048a59340, 0x00ffffff }, // 31
+ {12,  8, 3,  0, 0x7905ad8d, 0x5d33ef0c76d2c0a5, 0x0067d88f56a29cca, 0xb6a0adc2d677c080, 0x00ffffff }, // 32
+ {12,  8, 4,  0, 0x58e6f7c1, 0xd61ecb1ad8aeacdd, 0x000a6274bbdd0fad, 0xe32246c99c60ad85, 0xffffffff }, // 33
+ {13,  9, 4,  0, 0x7d7f2cee, 0x697ab5e277de1622, 0x0109d8792fb4c495, 0xdf56c3e01bc6c732, 0xffffffff }, // 34
+};
 
   // Fetch upper 128 bits of the src[]
   // Attention this code works only on byte-addressable Little Endian machines!
-  const int srcH_offs = recip_tab[n-1].srcH_offs;
+  const unsigned src_offs = recip_tab[n-1].src_offs;
   uint64_t srcH, srcL;
-  memcpy(&srcH, (char*)src + srcH_offs + 8, sizeof(srcH));
-  memcpy(&srcL, (char*)src + srcH_offs + 1, sizeof(srcL));
-  srcL = (srcL << 8) | (*(uint8_t*)((char*)src + (srcH_offs & 15)) | recip_tab[n-1].srcH_msk);
-
-  const uint64_t invF_h = recip_tab[n-1].invF_h;
-  const uint64_t invF_l = recip_tab[n-1].invF_l;
-  const uint64_t mulF_h = recip_tab[n-1].mulF_h;
-  const uint64_t mulF_l = recip_tab[n-1].mulF_l;
-  uint64_t src1 = src[1];
-  uint64_t src0 = src[0];
+  memcpy(&srcH, (char*)src + src_offs + 8, sizeof(srcH));
+  memcpy(&srcL, (char*)src + src_offs + 0, sizeof(srcL));
 
 #ifndef _MSC_VER
+  // Multiplication by reciprocal
   typedef unsigned __int128 uintex_t;
-  uintex_t rx = (uintex_t)srcH * invF_h;
-  rx += ((uintex_t)srcH * invF_l) >> 64;
-  rx += ((uintex_t)srcL * invF_h) >> 64;
-  rx >>= 6;
+  const uint64_t invF_m = recip_tab[n-1].invF_m;
+  const uint64_t invF_h = recip_tab[n-1].invF_h;
+  uintex_t rxxL = (uintex_t)srcH * invF_m;
+  rxxL         += (uint64_t)((uintex_t)srcL * invF_m >> 64);
+  rxxL         += (uintex_t)srcL * invF_h;
+  uint64_t rxxLL = (srcH >> 32) * (uint64_t)recip_tab[n-1].invF_l;
+  uint32_t srcLL;
+  memcpy(&srcLL, (char*)src + recip_tab[n-1].src_offsLL, sizeof(srcLL));
+  srcLL <<= recip_tab[n-1].shift_LL;
+  rxxLL += srcLL * (invF_h >> 32); // no overflow here
+  rxxL += rxxLL;
+  uintex_t rx = (uintex_t)srcH * invF_h + (uint64_t)(rxxL >> 64);
+
+  // calculate LS word of reminder
+  const uint64_t mulF_l = recip_tab[n-1].mulF_l;
+  uint64_t src0;
+  memcpy(&src0, (char*)src + recip_tab[n-1].rem_offs, sizeof(src0));
+  uint64_t rem0 = src0 - (uint64_t)rx * mulF_l;  // remainder in rem0
+
+  const uint64_t rxxL_thr = (uint64_t)(-1) << 36;
+  if (__builtin_expect((uint64_t)rxxL >= rxxL_thr, 0)) {
+    // Fractional part is close to 1, check for underflow
+    if (__builtin_expect(rem0 >= mulF_l, 0)) {
+      #if REPORT_UNDERFLOWS
+      gl_underflow = 1;
+      #endif
+      rem0 -= mulF_l;
+      rx += 1;
+    }
+  }
   uint64_t r1 = rx >> 64;
   uint64_t r0 = rx;
-  src1 -= r1*mulF_l;
-  src1 -= r0*mulF_h;
-  uintex_t rem = ((uintex_t)src1 << 64) | src0;
-  rem -= (uintex_t)r0 * mulF_l;
-
-  const uintex_t mulF = ((uintex_t)mulF_h << 64) | mulF_l;
-  if (rem >= mulF) {
-    rem -= mulF;
-    rx += 1;
-    #if REPORT_UNDERFLOWS
-    gl_underflow = 1;
-    #endif
-  }
-  int steaky = rem != 0;
-
-  r1 = rx >> 64;
-  r0 = rx;
 #else
-  uint64_t r1;
-  uint64_t r0 = _umul128(srcH, invF_h, &r1);
+  // Multiplication by reciprocal
+  const uint64_t invF_m = recip_tab[n-1].invF_m;
+  uint64_t rF, r0, r1, rxLH0, rxLH1, rxHH0;
+  rF   = _umul128(srcH, invF_m, &r0);
   uint8_t carry;
-  carry = _addcarry_u64(0,     r0, __umulh(srcH, invF_l), &r0);
-  carry = _addcarry_u64(carry, r1, 0, &r1);
-  carry = _addcarry_u64(0,     r0, __umulh(srcL, invF_h), &r0);
-  carry = _addcarry_u64(carry, r1, 0, &r1);
-  r0 = (r0 >> 6) | (r1 << (64-6));
-  r1 = (r1 >> 6);
+  carry = _addcarry_u64(0,     rF, __umulh(srcL, invF_m), &rF);
+  carry = _addcarry_u64(carry, r0, 0,                     &r0);
+  const uint64_t invF_h = recip_tab[n-1].invF_h;
+  rxLH0 = _umul128(srcL, invF_h, &rxLH1);
+  carry = _addcarry_u64(0,     rF, rxLH0, &rF);
+  carry = _addcarry_u64(carry, r0, rxLH1, &r0);
+  uint64_t rxxLL = (srcH >> 32) * (uint64_t)recip_tab[n-1].invF_l;
+  uint32_t srcLL;
+  memcpy(&srcLL, (char*)src + recip_tab[n-1].src_offsLL, sizeof(srcLL));
+  srcLL <<= recip_tab[n-1].shift_LL;
+  rxxLL += srcLL * (invF_h >> 32); // no overflow here
+  carry = _addcarry_u64(0,     rF, rxxLL, &rF);
+  carry = _addcarry_u64(carry, r0, 0,     &r0);
+  rxHH0 = _umul128(srcH, invF_h, &r1);
+  carry = _addcarry_u64(0,     r0, rxHH0, &r0);
+  carry = _addcarry_u64(carry, r1, 0,     &r1);
+  // Integer part of result in r1:r0. Fractional part in rF
 
-  src1 -= r1*mulF_l;
-  src1 -= r0*mulF_h;
-  uint64_t mx_h;
-  uint64_t mx_l = _umul128(r0, mulF_l, &mx_h);
-  uint8_t borrow;
-  borrow = _subborrow_u64(0,      src0, mx_l, &src0);
-  borrow = _subborrow_u64(borrow, src1, mx_h, &src1);
-  // remainder in src1:src0
-  int steaky = (src0|src1) != 0;
+  // calculate LS word of reminder
+  const uint64_t mulF_l = recip_tab[n-1].mulF_l;
+  uint64_t src0;
+  memcpy(&src0, (char*)src + recip_tab[n-1].rem_offs, sizeof(src0));
+  uint64_t rem0 = src0 - (uint64_t)r0 * mulF_l;  // remainder in rem0
 
-  uint64_t rem_h, rem_l;
-  borrow = _subborrow_u64(0,      src0, mulF_l, &rem_l);
-  borrow = _subborrow_u64(borrow, src1, mulF_h, &rem_h);
-  if (!borrow) {
-    steaky = (rem_l|rem_h) != 0;
-    carry = _addcarry_u64(0,     r0, 1, &r0);
-    carry = _addcarry_u64(carry, r1, 0, &r1);
+  const uint64_t rF_thr = (uint64_t)(-1) << 36;
+  if (rF >= rF_thr) {
+    // Fractional part is close to 1, check for underflow
+    if (rem0 >= mulF_l) {
+      #if REPORT_UNDERFLOWS
+      gl_underflow = 1;
+      #endif
+      rem0 -= mulF_l;
+      carry = _addcarry_u64(0,     r0, 1, &r0);
+      carry = _addcarry_u64(carry, r1, 0, &r1);
+    }
   }
 #endif
 
   result[0] = (r1 << 63) | (r0 >> 1);
   result[1] = r1 >> 1;
-  return (r0*2 & 2) | steaky;
+  uint64_t steaky = rem0 | (src[0] & recip_tab[n-1].steaky_msk);
+  return ((int)r0 & 1) *2 + (steaky != 0);
 }
