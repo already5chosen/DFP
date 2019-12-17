@@ -111,9 +111,9 @@ int DivideDecimal68ByPowerOf10(uint64_t result[2], const uint64_t src[4], unsign
   uint64_t rem0 = src0 - (uint64_t)rx * mulF_l;  // remainder in rem0
 
   const uint64_t rxxL_thr = (uint64_t)(-1) << 36;
-  if (__builtin_expect((uint64_t)rxxL >= rxxL_thr, 0)) {
+  if ((uint64_t)rxxL >= rxxL_thr) {
     // Fractional part is close to 1, check for underflow
-    if (__builtin_expect(rem0 >= mulF_l, 0)) {
+    if (rem0 >= mulF_l) {
       #if REPORT_UNDERFLOWS
       gl_underflow = 1;
       #endif
