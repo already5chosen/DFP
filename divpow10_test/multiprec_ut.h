@@ -45,3 +45,4 @@ struct mp_uint256_t {
 mp_uint256_t mulx(const mp_uint128_t& a, const mp_uint128_t& b);
 mp_uint256_t add(const mp_uint256_t& a, const mp_uint256_t& b);
 mp_uint256_t sub(const mp_uint256_t& a, const mp_uint256_t& b);
+mp_uint128_t mulu(const mp_uint128_t& a, const mp_uint128_t& b);

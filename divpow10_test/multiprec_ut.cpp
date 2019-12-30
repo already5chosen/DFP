@@ -103,3 +103,8 @@ mp_uint256_t sub(const mp_uint256_t& a, const mp_uint256_t& b)
   return mp_uint256_t(w0, w1, w2, w3);
 }
 
+mp_uint128_t mulu(const mp_uint128_t& a, const mp_uint128_t& b)
+{
+  mp_uint256_t ab = mulx(a, b);
+  return mp_uint128_t(&ab.w[2]);
+}

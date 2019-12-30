@@ -92,31 +92,24 @@ int main(int argz, char**argv)
       for (int k = 0; k < 5; ++k)
         rndw[k] = rndFunc();
       unsigned n = (((rndw[0] & MSK32)*rl) >> 32) + r0;
-
-      if (i % 2 == 1) { // distribution with log factor
-        unsigned rsh = (rndw[0] >> 32) % 128;
-        if (rsh > 0) {
-          uint64_t w0 = rndw[1];
-          uint64_t w1 = rndw[2];
-          if (rsh >= 64) {
-            w0 = w1;
-            w1 = 0;
-            rsh -= 64;
-          }
-          if (rsh != 0) {
-            w0 = (w0 >> rsh) | (w1 << (64-rsh));
-            w1 = (w1 >> rsh);
-          }
-          rndw[1] = w0;
-          rndw[2] = w1;
-        }
+      mp_uint128_t xx; // result of division
+      if (i % 2 == 1) { // distribution with log factor (biased by 8) on range [0:2**112-9]
+        // use 44 random bits to generate log-distributed interval
+        int64_t ex0 = (rndw[1] >> 20)*109 >> 12; // ex in range [0:119*2**32-1]
+        double d_xx0 = floor(exp2((ex0+0)*(1.0/(uint64_t(1) << 32)))*8.0-8.0); // range [0:2**112-9]
+        double d_xx1 = floor(exp2((ex0+1)*(1.0/(uint64_t(1) << 32)))*8.0-8.0);
+        xx = double2uint128(d_xx0);
+        double dULP = d_xx1 - d_xx0;
+        if (dULP > 0) // use 84 remaining random bits to chose random point on interval [d_xx0:d_xx1)
+          xx += mulu(double2uint128(dULP), mp_uint128_t(rndw[1] << 44, rndw[2]));
+      } else { // uniform distribution on range [0:10**34-1]
+        xx = mulu(pow10_tab[34], mp_uint128_t(&rndw[1]));
       }
-      mp_uint256_t xx = mulx(pow10_tab[34], mp_uint128_t(&rndw[1])); // result of division
-      mp_uint256_t rx = mulx(pow10_tab[n],  mp_uint128_t(&rndw[3])); // remainder of division
+      mp_uint128_t rx = mulu(pow10_tab[n],  mp_uint128_t(&rndw[3])); // remainder of division
 
       // store inputs for the tests
-      outv[i].div = mp_uint128_t(&xx.w[2]);
-      outv[i].rem = mp_uint128_t(&rx.w[2]);
+      outv[i].div = xx;
+      outv[i].rem = rx;
       expv[i] = n;
       inpv[i] = add(mulx(pow10_tab[n], outv[i].div), outv[i].rem);
     }
@@ -128,21 +121,17 @@ int main(int argz, char**argv)
         unsigned n = expv[i];
         mp_uint128_t offs = uint64_t(0);
         if (n > 0) {
-          // generate offset exponentially distributed on range [2..10**n/2-1]
           const double LOG2_10  = 3.3219280948873623478703194294894;
-          const double POW2_n64 = 0.5/(uint64_t(1) << 63);
-          double Lx = (LOG2_10*n - 2.0)*POW2_n64;
-          double dOffs = floor(exp2(Lx*rndFunc()+1.0));
-          offs = double2uint128(dOffs);
-          double dULP = floor(nextafter(dOffs, 1e35)) - dOffs;
-          if (dULP > 0) {
-            mp_uint256_t offsInc = mulx(double2uint128(dULP), rndFunc());
-            offs += mp_uint128_t(&offsInc.w[2]);
-          }
-          if (cmp(offs, pow10_tab[n].half()) >= 0) {
-            offs = pow10_tab[n].half();
-            offs.w[0] -= 1;
-          }
+          unsigned re = floor(LOG2_10*n-1); // floor(log2(10**n/2))
+          // generate offset exponentially distributed on range [2..2**re-1]
+          // use 57 random bits to generate log-distributed interval
+          int64_t ex0 = (rndFunc() >> 7)*(re-1) >> 25; // ex in range [0:(re-1)*2**32-1]
+          double d_xx0 = floor(exp2((ex0+0)*(1.0/(uint64_t(1) << 32)))*2.0); // range [2..2**re-1]
+          double d_xx1 = floor(exp2((ex0+1)*(1.0/(uint64_t(1) << 32)))*2.0);
+          offs = double2uint128(d_xx0);
+          double dULP = d_xx1 - d_xx0;
+          if (dULP > 0) // use 128 random bits to chose random point on interval [d_xx0:d_xx1)
+            offs += mulu(double2uint128(dULP), mp_uint128_t(rndFunc(), rndFunc()));
         }
         mp_uint256_t src[11];
         src[0]  = mulx(pow10_tab[n], outv[i].div);
